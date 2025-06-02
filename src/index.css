@@ -1,13 +1,43 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Mobile-specific improvements */
+@media (max-width: 768px) {
+    /* Prevent zoom on input focus (iOS) */
+    input, select, textarea {
+      font-size: 16px !important;
+      transform-origin: left top;
+      transition: none !important;
+    }
+    
+    /* Better touch targets */
+    button {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    
+    /* Improve spacing */
+    .container {
+      padding: 8px !important;
+    }
+    
+    /* Better form focus states */
+    input:focus, select:focus, textarea:focus {
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+      border-color: #3b82f6 !important;
+      outline: none !important;
+    }
+    
+    /* Safe area for phones with notches */
+    .safe-area-pb {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+    
+    /* Better notification positioning */
+    .fixed.bottom-4.right-4 {
+      bottom: 80px !important;
+      left: 12px !important;
+      right: 12px !important;
+      max-width: calc(100vw - 24px);
+    }
+  }
