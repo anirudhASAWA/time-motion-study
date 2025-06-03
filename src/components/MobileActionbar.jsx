@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Download, Settings, FileText, Menu, X, BarChart3, Save, LogOut } from 'lucide-react';
+import { Plus, Download, Settings, FileText, Menu, X } from 'lucide-react';
 
-// Clean Mobile Action Bar with Slide-up Menu
+// Clean Mobile Action Bar with Slide-up Menu - Removed Analytics and Backup
 function MobileActionBar({ 
   onAddProcess, 
   onExport, 
@@ -9,7 +9,6 @@ function MobileActionBar({
   onViewRecordings,
   setupMode = false,
   showRecordings = false,
-  // ✅ NEW: Add prop to show if recordings need refresh
   recordingsNeedRefresh = false
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -31,6 +30,7 @@ function MobileActionBar({
     }
   };
 
+  // ✅ UPDATED: Removed Analytics and Backup menu items
   const menuItems = [
     {
       icon: FileText,
@@ -38,15 +38,7 @@ function MobileActionBar({
       action: onViewRecordings,
       color: 'bg-indigo-500 hover:bg-indigo-600',
       description: 'View all recorded time entries',
-      // ✅ NEW: Show indicator if recordings need refresh
       hasIndicator: recordingsNeedRefresh && !showRecordings
-    },
-    {
-      icon: BarChart3,
-      label: 'Analytics Dashboard',
-      action: () => {}, // You can connect this to analytics
-      color: 'bg-purple-500 hover:bg-purple-600',
-      description: 'View process analytics and metrics'
     },
     {
       icon: Download,
@@ -54,13 +46,6 @@ function MobileActionBar({
       action: onExport,
       color: 'bg-green-500 hover:bg-green-600',
       description: 'Export data to Excel or CSV'
-    },
-    {
-      icon: Save,
-      label: 'Backup Data',
-      action: () => {}, // You can connect this to backup
-      color: 'bg-orange-500 hover:bg-orange-600',
-      description: 'Create a backup of your data'
     },
     {
       icon: Settings,
@@ -127,7 +112,7 @@ function MobileActionBar({
                     <div className="font-semibold">{item.label}</div>
                     <div className="text-sm opacity-90 font-normal">{item.description}</div>
                   </div>
-                  {/* ✅ NEW: Show indicator for recordings if they need refresh */}
+                  {/* Show indicator for recordings if they need refresh */}
                   {item.hasIndicator && (
                     <div className="absolute top-2 right-2">
                       <div className="w-3 h-3 bg-orange-400 rounded-full border-2 border-white"></div>
@@ -139,7 +124,7 @@ function MobileActionBar({
             
             {/* Quick Stats */}
             <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">Quick Info</h4>
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">Status</h4>
               <div className="text-xs text-gray-500 space-y-1">
                 {setupMode ? (
                   <div className="flex items-center gap-2">
@@ -152,7 +137,6 @@ function MobileActionBar({
                     Ready for time tracking
                   </div>
                 )}
-                {/* ✅ NEW: Show recordings update status */}
                 {recordingsNeedRefresh && (
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
@@ -190,7 +174,7 @@ function MobileActionBar({
             `}
           >
             {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
-            {/* ✅ NEW: Show indicator on menu button if recordings need refresh */}
+            {/* Show indicator on menu button if recordings need refresh */}
             {recordingsNeedRefresh && !isMenuOpen && (
               <div className="absolute top-1 right-1">
                 <div className="w-3 h-3 bg-orange-400 rounded-full border-2 border-white"></div>
@@ -206,7 +190,7 @@ function MobileActionBar({
   );
 }
 
-// Mobile Modal Component (unchanged, but optimized)
+// Mobile Modal Component (unchanged)
 export function MobileModal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null;
 
@@ -240,7 +224,7 @@ export function MobileModal({ isOpen, onClose, title, children }) {
   );
 }
 
-// Mobile Add Process Modal (enhanced)
+// Mobile Add Process Modal (unchanged)
 export function MobileAddProcessModal({ isOpen, onClose, onSubmit }) {
   const [processName, setProcessName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

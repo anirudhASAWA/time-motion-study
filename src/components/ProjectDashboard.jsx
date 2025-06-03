@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Plus, Play, Calendar, Building, MapPin, User, Package, Trash2, X, Factory } from 'lucide-react';
-import { db } from '../data/supabase';
+import { Clock, Plus, Play, Calendar, Building, User, Package, Trash2, X, Factory, LogOut } from 'lucide-react';
+import { db, auth } from '../data/supabase';
 
 function ProjectDashboard({ user, onSelectProject, onCreateProject, onDeleteProject, notifications }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
   useEffect(() => {
     loadProjects();
+    
+    // Listen for window resize
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const loadProjects = async () => {
@@ -57,12 +66,22 @@ function ProjectDashboard({ user, onSelectProject, onCreateProject, onDeleteProj
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await auth.signOut();
+      notifications?.showInfo('Signed Out', 'You have been signed out successfully');
+    } catch (error) {
+      notifications?.showError('Sign Out Error', 'Failed to sign out');
+      console.error('Sign out error:', error);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'paused': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'active': return 'bg-green-100 text-green-800 border-green-200';
+      case 'paused': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'completed': return 'bg-blue-100 text-blue-800 border-blue-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -100,125 +119,185 @@ function ProjectDashboard({ user, onSelectProject, onCreateProject, onDeleteProj
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="text-center bg-white rounded-2xl p-8 shadow-lg">
           <Clock className="animate-spin text-blue-500 mx-auto mb-4" size={48} />
-          <p className="text-gray-600">Loading your projects...</p>
+          <p className="text-gray-600 font-medium">Loading your projects...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Clock className="text-blue-500 mr-3" size={32} />
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-                  Time & Motion Study Projects
-                </h1>
-                <p className="text-gray-600">Welcome back, {user?.email}</p>
-                <p className="text-sm text-gray-500">Manage your industrial engineering studies</p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* ✅ REDESIGNED: Mobile-First Header */}
+      <div className="bg-white shadow-sm">
+        <div className="container mx-auto px-4 py-4">
+          {/* Mobile Layout */}
+          {isMobile ? (
+            <div className="space-y-4">
+              {/* Top Row: Title and Sign Out */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center mr-3">
+                    <Clock className="text-white" size={20} />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-bold text-gray-800">
+                      Study Projects
+                    </h1>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  <LogOut size={16} />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+              
+              {/* User Info */}
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                <p className="text-blue-800 font-medium text-sm">Welcome back!</p>
+                <p className="text-blue-600 text-xs truncate">{user?.email}</p>
+                <p className="text-blue-500 text-xs mt-1">Manage your industrial engineering studies</p>
               </div>
             </div>
-          </div>
+          ) : (
+            /* Desktop Layout */
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center mr-4">
+                  <Clock className="text-white" size={24} />
+                </div>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+                    Time & Motion Study Projects
+                  </h1>
+                  <p className="text-gray-600">Welcome back, {user?.email}</p>
+                  <p className="text-sm text-gray-500">Manage your industrial engineering studies</p>
+                </div>
+              </div>
+              
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+              >
+                <LogOut size={16} />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Projects Section */}
-        <div className="flex items-center justify-between mb-6">
+      <div className="container mx-auto px-4 py-6">
+        {/* ✅ REDESIGNED: Projects Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-xl font-bold text-gray-800">Your Study Projects</h2>
-            <p className="text-gray-600">Select a project to continue your time and motion study</p>
+            <h2 className="text-xl font-bold text-gray-800">Your Projects</h2>
+            <p className="text-gray-600 text-sm">
+              {isMobile ? 'Tap a project to continue' : 'Select a project to continue your time and motion study'}
+            </p>
           </div>
           
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl active:scale-98 w-full sm:w-auto"
           >
             <Plus size={20} />
-            <span className="hidden md:inline">New Study Project</span>
-            <span className="md:hidden">New Project</span>
+            <span>{isMobile ? 'New Project' : 'New Study Project'}</span>
           </button>
         </div>
 
-        {/* Projects Grid */}
+        {/* ✅ REDESIGNED: Projects Grid */}
         {projects.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
             {projects.map((project) => (
               <div
                 key={project.id}
-                className="bg-white rounded-lg shadow-lg hover:shadow-xl transition-shadow border border-gray-200 relative group"
+                className="bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 relative group overflow-hidden"
               >
-                {/* Delete Button */}
+                {/* ✅ MOBILE-OPTIMIZED: Delete Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleProjectDelete(project.id, `${project.company_name} - ${project.plant_name}`);
                   }}
-                  className="absolute top-3 right-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                  className={`absolute top-3 right-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors z-10 ${
+                    isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
                   title="Delete Project"
                 >
                   <Trash2 size={16} />
                 </button>
 
                 <div 
-                  className="p-6 cursor-pointer"
+                  className="p-4 cursor-pointer h-full"
                   onClick={() => handleProjectSelect(project)}
                 >
-                  {/* Project Header */}
-                  <div className="flex items-start justify-between mb-4 pr-8">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-bold text-gray-800 mb-1">
-                        {project.company_name}
-                      </h3>
-                      <p className="text-md text-gray-600 mb-2">{project.plant_name}</p>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                          {getStatusIcon(project.status)} {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                        </span>
+                  {/* ✅ REDESIGNED: Project Header */}
+                  <div className="mb-4">
+                    <div className="flex items-start justify-between mb-3 pr-8">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-gray-800 mb-1 leading-tight">
+                          {project.company_name}
+                        </h3>
+                        <p className="text-gray-600 text-sm mb-2">{project.plant_name}</p>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Project Details */}
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Building size={16} className="text-gray-400" />
-                      <span><strong>Company:</strong> {project.company_name}</span>
-                    </div>
                     
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Factory size={16} className="text-gray-400" />
-                      <span><strong>Plant:</strong> {project.plant_name}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Package size={16} className="text-gray-400" />
-                      <span><strong>Product:</strong> {project.product}</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <User size={16} className="text-gray-400" />
-                      <span><strong>Study by:</strong> {project.study_performed_by}</span>
+                    {/* Status Badge */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(project.status)}`}>
+                        {getStatusIcon(project.status)} {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Project Timeline */}
-                  <div className="border-t pt-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Calendar size={16} className="text-gray-400" />
+                  {/* ✅ REDESIGNED: Project Details */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Building size={12} className="text-gray-500" />
+                      </div>
+                      <span className="truncate">{project.company_name}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Factory size={12} className="text-gray-500" />
+                      </div>
+                      <span className="truncate">{project.plant_name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Package size={12} className="text-gray-500" />
+                      </div>
+                      <span className="truncate">{project.product}</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <User size={12} className="text-gray-500" />
+                      </div>
+                      <span className="truncate">{project.study_performed_by}</span>
+                    </div>
+                  </div>
+
+                  {/* ✅ REDESIGNED: Project Timeline */}
+                  <div className="border-t border-gray-100 pt-3 mb-4">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1 text-gray-500">
+                        <Calendar size={12} />
                         <span>Started {formatDate(project.created_at)}</span>
                       </div>
                       
                       {project.tentative_completion_date && (
-                        <div className={`font-medium ${
+                        <div className={`font-medium text-xs ${
                           getDaysRemaining(project.tentative_completion_date)?.includes('Overdue') 
                             ? 'text-red-600' 
                             : getDaysRemaining(project.tentative_completion_date)?.includes('today')
@@ -231,34 +310,34 @@ function ProjectDashboard({ user, onSelectProject, onCreateProject, onDeleteProj
                     </div>
                   </div>
 
-                  {/* Continue Button */}
-                  <div className="mt-4 pt-4 border-t">
-                    <button className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg font-medium transition-colors">
-                      <Play size={16} />
-                      Continue Study
-                    </button>
-                  </div>
+                  {/* ✅ REDESIGNED: Continue Button */}
+                  <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-3 px-4 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md active:scale-98">
+                    <Play size={16} />
+                    <span>Continue Study</span>
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          /* Empty State */
+          /* ✅ REDESIGNED: Empty State */
           <div className="text-center py-12">
-            <div className="max-w-md mx-auto">
-              <Clock className="mx-auto text-gray-400 mb-4" size={64} />
+            <div className="max-w-sm mx-auto">
+              <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Clock className="text-blue-500" size={32} />
+              </div>
               <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                No Study Projects Yet
+                No Projects Yet
               </h3>
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 mb-6 text-sm leading-relaxed">
                 Create your first time and motion study project to get started with industrial engineering analysis.
               </p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors mx-auto"
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all duration-200 mx-auto shadow-lg hover:shadow-xl active:scale-98"
               >
                 <Plus size={20} />
-                Create Your First Project
+                <span>Create Your First Project</span>
               </button>
             </div>
           </div>
@@ -272,14 +351,15 @@ function ProjectDashboard({ user, onSelectProject, onCreateProject, onDeleteProj
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleProjectCreate}
           notifications={notifications}
+          isMobile={isMobile}
         />
       )}
     </div>
   );
 }
 
-// Create Project Modal Component
-function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
+// ✅ REDESIGNED: Mobile-Optimized Create Project Modal
+function CreateProjectModal({ isOpen, onClose, onSubmit, notifications, isMobile }) {
   const [formData, setFormData] = useState({
     company_name: '',
     plant_name: '',
@@ -296,7 +376,6 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
       [field]: value
     }));
     
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({
         ...prev,
@@ -345,7 +424,6 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
       
       await onSubmit(projectData);
       
-      // Reset form
       setFormData({
         company_name: '',
         plant_name: '',
@@ -371,13 +449,15 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
       
-      {/* Modal */}
+      {/* ✅ MOBILE-FIRST: Modal */}
       <div className="flex items-center justify-center min-h-screen p-4">
-        <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className={`relative bg-white rounded-2xl shadow-2xl w-full max-h-[90vh] overflow-y-auto ${
+          isMobile ? 'max-w-sm' : 'max-w-lg'
+        }`}>
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b">
+          <div className="flex items-center justify-between p-6 border-b border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900">
-              Create New Study Project
+              {isMobile ? 'New Project' : 'Create New Study Project'}
             </h3>
             <button
               onClick={onClose}
@@ -388,7 +468,7 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="p-6 space-y-5">
             {/* Company Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -398,7 +478,7 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                 type="text"
                 value={formData.company_name}
                 onChange={(e) => handleInputChange('company_name', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                   errors.company_name ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Enter company name"
@@ -418,7 +498,7 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                 type="text"
                 value={formData.plant_name}
                 onChange={(e) => handleInputChange('plant_name', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                   errors.plant_name ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Enter plant or factory name"
@@ -438,7 +518,7 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                 type="text"
                 value={formData.product}
                 onChange={(e) => handleInputChange('product', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                   errors.product ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Enter product or production line"
@@ -458,7 +538,7 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                 type="text"
                 value={formData.study_performed_by}
                 onChange={(e) => handleInputChange('study_performed_by', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                   errors.study_performed_by ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="Your name or team name"
@@ -478,26 +558,18 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                 type="date"
                 value={formData.tentative_completion_date}
                 onChange={(e) => handleInputChange('tentative_completion_date', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 disabled={isSubmitting}
                 min={new Date().toISOString().split('T')[0]}
               />
             </div>
 
             {/* Submit Buttons */}
-            <div className="flex gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
+            <div className="flex flex-col gap-3 pt-4">
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl active:scale-98"
               >
                 {isSubmitting ? (
                   <>
@@ -510,6 +582,15 @@ function CreateProjectModal({ isOpen, onClose, onSubmit, notifications }) {
                     Create Project
                   </>
                 )}
+              </button>
+              
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
+              >
+                Cancel
               </button>
             </div>
           </form>

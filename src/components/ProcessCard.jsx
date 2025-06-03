@@ -11,7 +11,6 @@ function ProcessCard({
   notifications,
   isMobile = false,
   hapticFeedback = () => {},
-  // ✅ NEW: Callback to notify parent when time reading is added
   onTimeReadingAdded = () => {}
 }) {
   const [newSubprocessName, setNewSubprocessName] = useState('');
@@ -19,21 +18,36 @@ function ProcessCard({
   const [editName, setEditName] = useState(process.name);
   const [isAddingSubprocess, setIsAddingSubprocess] = useState(false);
 
-  // ✅ CORRECT: Get sequence state from process data, but keep local backup for immediate updates
+  // ✅ FIXED: Better sequence state management
   const [localSequenceMode, setLocalSequenceMode] = useState(process.sequence_mode || false);
-  const [localSequenceIndex, setLocalSequenceIndex] = useState(process.current_sequence_index || -1);
+  const [localSequenceIndex, setLocalSequenceIndex] = useState(process.current_sequence_index || 0);
 
-  // Sync local state with process changes
+  // ✅ FIXED: Sync local state with process changes and ensure valid index
   useEffect(() => {
     setLocalSequenceMode(process.sequence_mode || false);
-    setLocalSequenceIndex(process.current_sequence_index || -1);
-  }, [process.sequence_mode, process.current_sequence_index]);
+    
+    // ✅ IMPORTANT: Ensure sequence index is valid
+    let validIndex = process.current_sequence_index || 0;
+    
+    // If sequence mode is enabled but index is invalid, set to 0
+    if (process.sequence_mode && process.subprocesses?.length > 0) {
+      if (validIndex < 0 || validIndex >= process.subprocesses.length) {
+        validIndex = 0;
+        console.log(`🔧 Fixed invalid sequence index: ${process.current_sequence_index} -> ${validIndex}`);
+      }
+    } else if (!process.sequence_mode) {
+      validIndex = -1; // Disabled state
+    }
+    
+    setLocalSequenceIndex(validIndex);
+  }, [process.sequence_mode, process.current_sequence_index, process.subprocesses?.length]);
 
-  // Use local state for immediate responsiveness, process data as source of truth
+  // Use local state for immediate responsiveness
   const sequenceMode = localSequenceMode;
   const currentSequenceIndex = localSequenceIndex;
 
-  // Optimized add subprocess with immediate UI update
+  console.log(`🔍 ProcessCard Debug: sequenceMode=${sequenceMode}, currentIndex=${currentSequenceIndex}, subprocessCount=${process.subprocesses?.length || 0}`);
+
   const addSubprocess = useCallback(async () => {
     if (!newSubprocessName.trim() || isAddingSubprocess) return;
     
@@ -44,7 +58,6 @@ function ProcessCard({
       const newSubprocess = await db.addSubprocess(process.id, newSubprocessName.trim());
       if (newSubprocess) {
         setNewSubprocessName('');
-        // Immediate UI update without full reload for better performance
         await onReloadProcesses();
         notifications?.showSuccess('Subprocess Added', `"${newSubprocessName.trim()}" has been added`);
       }
@@ -65,18 +78,18 @@ function ProcessCard({
     setEditing(false);
   };
 
-  // ✅ FIXED: Sequence mode toggle with proper timer management
+  // ✅ FIXED: Sequence mode toggle with proper index initialization
   const toggleSequenceMode = async () => {
     const newSequenceMode = !sequenceMode;
     hapticFeedback();
     
     console.log(`🔄 Toggling sequence mode: ${sequenceMode} -> ${newSequenceMode}`);
     
-    // 🚀 INSTANT: Update local state immediately
+    // Update local state immediately
     setLocalSequenceMode(newSequenceMode);
     
     if (!newSequenceMode) {
-      // ✅ Disabling sequence mode - stop all timers and reset
+      // Disabling sequence mode - stop all timers and reset
       setLocalSequenceIndex(-1);
       
       if (process.subprocesses) {
@@ -89,9 +102,9 @@ function ProcessCard({
       
       console.log('✅ Sequence mode disabled - all timers stopped');
     } else {
-      // ✅ Enabling sequence mode - prepare but DON'T auto-start
+      // ✅ FIXED: Enabling sequence mode - set to first subprocess (index 0)
       if (process.subprocesses && process.subprocesses.length > 0) {
-        setLocalSequenceIndex(0);
+        setLocalSequenceIndex(0); // Always start at first subprocess
         
         // Stop any currently running timers
         process.subprocesses.forEach((subprocess) => {
@@ -100,22 +113,24 @@ function ProcessCard({
           }
         });
         
-        console.log('✅ Sequence mode enabled - ready for first subprocess');
-        // ✅ DON'T auto-start timer - let user start manually or use Next Step
+        console.log(`✅ Sequence mode enabled - set to first subprocess (index 0)`);
+      } else {
+        setLocalSequenceIndex(-1); // No subprocesses available
+        console.log('⚠️ Sequence mode enabled but no subprocesses available');
       }
     }
     
-    // 🔄 BACKGROUND: Update database
+    // Update database
     const updates = { 
       sequence_mode: newSequenceMode,
-      current_sequence_index: newSequenceMode ? 0 : -1
+      current_sequence_index: newSequenceMode && process.subprocesses?.length > 0 ? 0 : -1
     };
     
     try {
       await onUpdateProcess(process.id, updates);
       
       const message = newSequenceMode 
-        ? `Sequence Mode enabled - Use Start/Next Step to begin`
+        ? `Sequence Mode enabled - Ready for first subprocess`
         : `Sequence Mode disabled`;
       
       notifications?.showSuccess('Sequence Mode', message);
@@ -129,7 +144,7 @@ function ProcessCard({
     }
   };
 
-  // ✅ UPDATED: Next Step with automatic time reading notification
+  // ✅ FIXED: Next Step with better index management
   const moveToNextSubprocess = async () => {
     if (!sequenceMode || !process.subprocesses?.length) {
       console.log('❌ Cannot move to next: sequenceMode=', sequenceMode, 'subprocesses=', process.subprocesses?.length);
@@ -139,11 +154,12 @@ function ProcessCard({
 
     hapticFeedback();
     
-    // ✅ IMPORTANT: Handle case where sequence just started (index might be -1 or 0)
+    // ✅ FIXED: Ensure current index is valid
     let currentIndex = currentSequenceIndex;
     if (currentIndex < 0 || currentIndex >= process.subprocesses.length) {
-      currentIndex = 0; // Start from first subprocess if invalid index
+      currentIndex = 0;
       setLocalSequenceIndex(0);
+      console.log(`🔧 Fixed invalid current index: ${currentSequenceIndex} -> 0`);
     }
     
     const currentSubprocess = process.subprocesses[currentIndex];
@@ -155,18 +171,16 @@ function ProcessCard({
     
     console.log(`📊 Next Step: Current subprocess "${currentSubprocess.name}" (index ${currentIndex})`);
     
-    // ✅ STEP 1: Check if current subprocess has running timer
+    // Check if current subprocess has running timer and record time
     let timeData = null;
     const isCurrentTimerRunning = timerHook.isTimerRunning(process.id, currentSubprocess.id);
     
     if (isCurrentTimerRunning) {
       console.log(`⏱️ Timer is running for "${currentSubprocess.name}" - recording time`);
       
-      // Stop timer and get the time (using stopTimer instead of recordLap to avoid restart)
       timeData = timerHook.stopTimer(process.id, currentSubprocess.id);
       
       if (timeData) {
-        // Manually create proper time data for recording
         const recordData = {
           timeMilliseconds: timeData.timeMilliseconds,
           startTime: timeData.startTime,
@@ -175,7 +189,7 @@ function ProcessCard({
           shouldRecord: true
         };
         
-        // ✅ UPDATED: Save to database and notify parent
+        // Save to database and notify parent
         setTimeout(async () => {
           try {
             await db.saveTimeReading(process.id, currentSubprocess.id, {
@@ -187,7 +201,6 @@ function ProcessCard({
               productionQty: currentSubprocess.production_qty || 0
             });
             
-            // ✅ NEW: Notify parent that new time reading was added
             onTimeReadingAdded();
             console.log('📢 Parent notified of new time reading');
             
@@ -197,7 +210,7 @@ function ProcessCard({
           }
         }, 0);
         
-        // ✅ UPDATE: Show the recorded time in the subprocess display
+        // Update subprocess display
         if (window.updateSubprocessLastTime && window.updateSubprocessLastTime[`${process.id}-${currentSubprocess.id}`]) {
           window.updateSubprocessLastTime[`${process.id}-${currentSubprocess.id}`](timeData.formattedTime);
         }
@@ -205,11 +218,9 @@ function ProcessCard({
         notifications?.showSuccess('Time Recorded', 
           `${currentSubprocess.name}: ${timeData.formattedTime}`);
       }
-    } else {
-      console.log(`ℹ️ No timer running for "${currentSubprocess.name}" - moving to next without recording`);
     }
     
-    // ✅ STEP 2: Calculate next subprocess index
+    // ✅ FIXED: Calculate next subprocess index
     let nextIndex = currentIndex + 1;
     if (nextIndex >= process.subprocesses.length) {
       nextIndex = 0; // Loop back to start
@@ -224,11 +235,10 @@ function ProcessCard({
     
     console.log(`➡️ Moving to next subprocess: "${nextSubprocess.name}" (index ${nextIndex})`);
     
-    // ✅ STEP 3: Update local state immediately for responsive UI
+    // ✅ FIXED: Update local state immediately for responsive UI
     setLocalSequenceIndex(nextIndex);
     
-    // ✅ STEP 4: Stop any other running timers and start the next one
-    // First, stop ALL other timers to ensure clean state
+    // Stop any other running timers and start the next one
     process.subprocesses.forEach((subprocess, index) => {
       if (index !== nextIndex && timerHook.isTimerRunning(process.id, subprocess.id)) {
         console.log(`🛑 Stopping timer for: ${subprocess.name}`);
@@ -236,7 +246,7 @@ function ProcessCard({
       }
     });
     
-    // Now start the next subprocess timer
+    // Start next subprocess timer
     const success = timerHook.startTimer(process.id, nextSubprocess.id);
     if (success) {
       console.log(`✅ Started timer for: ${nextSubprocess.name}`);
@@ -246,7 +256,7 @@ function ProcessCard({
       notifications?.showError('Timer Error', `Could not start timer for ${nextSubprocess.name}`);
     }
     
-    // ✅ STEP 5: Update database in background
+    // Update database in background
     try {
       await onUpdateProcess(process.id, { current_sequence_index: nextIndex });
       console.log(`✅ Database updated: sequence index = ${nextIndex}`);
@@ -343,6 +353,7 @@ function ProcessCard({
           </div>
         </div>
         
+        {/* ✅ ENHANCED: Better sequence mode display */}
         {sequenceMode && (
           <div className="mt-2 px-3 py-2 bg-blue-100 border border-blue-200 rounded text-sm">
             <div className="flex items-center justify-between">
@@ -350,14 +361,21 @@ function ProcessCard({
                 <Clock className="inline mr-1" size={14} />
                 Sequence Mode Active
               </span>
-              {process.subprocesses?.length > 0 && (
+              {process.subprocesses?.length > 0 && currentSequenceIndex >= 0 && (
                 <span className="text-blue-600">
                   Step {currentSequenceIndex + 1} of {process.subprocesses.length}
+                  {process.subprocesses[currentSequenceIndex] && 
+                    ` (${process.subprocesses[currentSequenceIndex].name})`
+                  }
                 </span>
               )}
             </div>
             <div className="text-xs text-blue-600 mt-1">
               Use Start/Stop/Lap buttons normally, or use "Next Step" to auto-advance
+            </div>
+            {/* ✅ Enhanced Debug info */}
+            <div className="text-xs text-gray-500 mt-1 font-mono">
+              Debug: currentIndex={currentSequenceIndex}, subprocesses={process.subprocesses?.length || 0}, sequenceMode={sequenceMode}
             </div>
           </div>
         )}
@@ -386,24 +404,30 @@ function ProcessCard({
           </button>
         </div>
 
-        {/* Subprocesses */}
+        {/* ✅ FIXED: Subprocesses with better active detection */}
         <div className="space-y-3">
-          {(process.subprocesses || []).map((subprocess, index) => (
-            <SubprocessCard
-              key={subprocess.id}
-              processId={process.id}
-              subprocess={subprocess}
-              timerHook={timerHook}
-              onReloadProcesses={onReloadProcesses}
-              isActiveInSequence={sequenceMode && index === currentSequenceIndex}
-              sequenceMode={sequenceMode}
-              notifications={notifications}
-              isMobile={isMobile}
-              hapticFeedback={hapticFeedback}
-              // ✅ NEW: Pass callback to notify when time reading is added
-              onTimeReadingAdded={onTimeReadingAdded}
-            />
-          ))}
+          {(process.subprocesses || []).map((subprocess, index) => {
+            // ✅ FIXED: Proper active detection
+            const isActiveInSequence = sequenceMode && currentSequenceIndex === index;
+            
+            console.log(`🔍 Subprocess "${subprocess.name}" (index ${index}): isActive=${isActiveInSequence}, currentIndex=${currentSequenceIndex}, sequenceMode=${sequenceMode}`);
+            
+            return (
+              <SubprocessCard
+                key={subprocess.id}
+                processId={process.id}
+                subprocess={subprocess}
+                timerHook={timerHook}
+                onReloadProcesses={onReloadProcesses}
+                isActiveInSequence={isActiveInSequence}
+                sequenceMode={sequenceMode}
+                notifications={notifications}
+                isMobile={isMobile}
+                hapticFeedback={hapticFeedback}
+                onTimeReadingAdded={onTimeReadingAdded}
+              />
+            );
+          })}
         </div>
 
         {(!process.subprocesses || process.subprocesses.length === 0) && (
@@ -417,7 +441,7 @@ function ProcessCard({
   );
 }
 
-// ✅ UPDATED: SubprocessCard with time reading notification
+// ✅ SubprocessCard component (unchanged but with better debugging)
 function SubprocessCard({ 
   processId, 
   subprocess, 
@@ -428,7 +452,6 @@ function SubprocessCard({
   notifications,
   isMobile = false,
   hapticFeedback = () => {},
-  // ✅ NEW: Callback to notify parent when time reading is added
   onTimeReadingAdded = () => {}
 }) {
   const [activityType, setActivityType] = useState(subprocess.activity_type || '');
@@ -441,7 +464,9 @@ function SubprocessCard({
   const isRunning = timerHook.isTimerRunning(processId, subprocess.id);
   const timerDisplay = timerHook.getTimerDisplay(processId, subprocess.id);
 
-  // ✅ NEW: Listen for timer changes to update last recorded time from timer hook
+  // ✅ Enhanced debugging for active state
+  console.log(`🎯 SubprocessCard "${subprocess.name}": isActiveInSequence=${isActiveInSequence}, sequenceMode=${sequenceMode}`);
+
   useEffect(() => {
     const timerLastTime = timerHook && typeof timerHook.getLastRecordedTime === 'function' 
       ? timerHook.getLastRecordedTime(processId, subprocess.id) 
@@ -452,7 +477,6 @@ function SubprocessCard({
     }
   }, [timerHook, processId, subprocess.id, lastRecordedTime]);
 
-  // ✅ FIXED: Start button works regardless of sequence mode
   const handleStart = () => {
     hapticFeedback();
     console.log(`▶️ Start button pressed for: ${subprocess.name}`);
@@ -465,7 +489,6 @@ function SubprocessCard({
     }
   };
 
-  // ✅ FIXED: Stop button works and doesn't record
   const handleStop = () => {
     hapticFeedback();
     console.log(`⏹️ Stop button pressed for: ${subprocess.name}`);
@@ -473,14 +496,12 @@ function SubprocessCard({
     const timeData = timerHook.stopTimer(processId, subprocess.id);
     
     if (timeData) {
-      // ✅ Clear last recorded time since this wasn't recorded
       setLastRecordedTime(null);
       notifications?.showInfo('Timer Stopped', 
         `Timer stopped at ${timeData.formattedTime} (not recorded)`);
     }
   };
 
-  // ✅ UPDATED: Lap button with automatic notification to parent
   const handleLap = () => {
     hapticFeedback();
     console.log(`📊 Lap button pressed for: ${subprocess.name}`);
@@ -488,10 +509,8 @@ function SubprocessCard({
     const timeData = timerHook.recordLap(processId, subprocess.id);
     
     if (timeData && timeData.shouldRecord) {
-      // ✅ Update the display immediately
       setLastRecordedTime(timeData.formattedTime);
       
-      // ✅ UPDATED: Save to database and notify parent
       setTimeout(async () => {
         try {
           await db.saveTimeReading(processId, subprocess.id, {
@@ -503,7 +522,6 @@ function SubprocessCard({
             productionQty
           });
           
-          // ✅ NEW: Notify parent that new time reading was added
           onTimeReadingAdded();
           console.log('📢 Parent notified of new time reading from lap');
           
@@ -525,9 +543,7 @@ function SubprocessCard({
     notifications?.showInfo('Timer Reset', 'Timer has been reset');
   };
 
-  // ✅ NEW: Expose function to update last recorded time from parent (for sequence mode)
   useEffect(() => {
-    // Create a global reference so parent can update this
     if (window.updateSubprocessLastTime) {
       window.updateSubprocessLastTime[`${processId}-${subprocess.id}`] = (time) => {
         console.log(`🎯 Updating last recorded time for ${subprocess.name}: ${time}`);
@@ -542,7 +558,6 @@ function SubprocessCard({
       };
     }
     
-    // Cleanup on unmount
     return () => {
       if (window.updateSubprocessLastTime && window.updateSubprocessLastTime[`${processId}-${subprocess.id}`]) {
         delete window.updateSubprocessLastTime[`${processId}-${subprocess.id}`];
@@ -556,13 +571,13 @@ function SubprocessCard({
         ? 'border-blue-500 bg-blue-50 shadow-md border-2' 
         : 'border-gray-200 bg-gray-50'
     }`}>
-      {/* Subprocess Header */}
+      {/* ✅ Enhanced: Subprocess Header with better active indication */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <h4 className="font-medium text-gray-800 text-sm md:text-base">{subprocess.name}</h4>
             {isActiveInSequence && (
-              <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full">
+              <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full font-medium">
                 ACTIVE
               </span>
             )}
@@ -578,7 +593,7 @@ function SubprocessCard({
             {timerDisplay}
           </div>
           
-          {/* ✅ FIXED: Last Recorded Time Display - Updated for sequence mode */}
+          {/* Last Recorded Time Display */}
           {lastRecordedTime && (
             <div className="mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm">
               <span className="text-green-800 font-medium">
@@ -628,7 +643,6 @@ function SubprocessCard({
 
       {/* Form Fields */}
       <div className="space-y-3 text-sm">
-        {/* Row 1: Activity Type and Persons */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-gray-600 mb-1 text-xs font-medium">Activity Type</label>
@@ -657,7 +671,6 @@ function SubprocessCard({
           </div>
         </div>
         
-        {/* Row 2: Production and Rating */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-gray-600 mb-1 text-xs font-medium">Production Qty</label>
@@ -684,7 +697,6 @@ function SubprocessCard({
           </div>
         </div>
         
-        {/* Row 3: Remarks */}
         <div>
           <label className="block text-gray-600 mb-1 text-xs font-medium">Remarks</label>
           <input

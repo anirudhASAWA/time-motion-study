@@ -1,5 +1,5 @@
 // src/App.js
-// Fixed version with improved data synchronization
+// Updated version - Removed Analytics Dashboard and Backup features
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { auth, db } from './data/supabase.js';
@@ -11,7 +11,7 @@ import AuthForm from './components/AuthForm.jsx';
 import ProcessCard from './components/ProcessCard.jsx';
 import MobileActionBar, { MobileAddProcessModal } from './components/MobileActionbar.jsx';
 import ProjectDashboard from './components/ProjectDashboard.jsx';
-import { Clock, Plus, Download, LogOut, FileText, Save, BarChart3, ArrowLeft } from 'lucide-react';
+import { Clock, Plus, Download, LogOut, FileText, ArrowLeft } from 'lucide-react';
 
 // Main App Component wrapped with providers
 function App() {
@@ -33,13 +33,12 @@ function AppContent() {
   const [timeReadings, setTimeReadings] = useState([]);
   const [showMobileAddModal, setShowMobileAddModal] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [showAnalytics, setShowAnalytics] = useState(false);
   const [isAddingProcess, setIsAddingProcess] = useState(false);
   
-  // ✅ NEW: Track if recordings view needs refresh
+  // ✅ Track if recordings view needs refresh
   const [recordingsNeedRefresh, setRecordingsNeedRefresh] = useState(false);
   
-  // ✅ NEW: Ref to track current project for cleanup
+  // ✅ Ref to track current project for cleanup
   const currentProjectRef = useRef(null);
   
   // Hooks
@@ -47,7 +46,7 @@ function AppContent() {
   const notifications = useNotifications();
   const timerHook = useEnhancedTimer(setupMode, notifications);
 
-  // ✅ NEW: Auto-refresh recordings when new data is added
+  // ✅ Auto-refresh recordings when new data is added
   const refreshRecordingsIfVisible = useCallback(async () => {
     if (showTimeReadings && currentProject?.id) {
       console.log('🔄 Auto-refreshing recordings view...');
@@ -60,29 +59,28 @@ function AppContent() {
         console.error('❌ Error auto-refreshing recordings:', error);
       }
     } else if (recordingsNeedRefresh) {
-      // Mark that refresh is needed when view opens
       console.log('📝 Recordings need refresh when view opens');
     }
   }, [showTimeReadings, currentProject?.id, recordingsNeedRefresh]);
 
-  // ✅ NEW: Auto-refresh effect
+  // ✅ Auto-refresh effect
   useEffect(() => {
     if (recordingsNeedRefresh) {
       refreshRecordingsIfVisible();
     }
   }, [recordingsNeedRefresh, refreshRecordingsIfVisible]);
 
-  // ✅ UPDATED: Enhanced project selection with proper cleanup
+  // ✅ Enhanced project selection with proper cleanup
   const handleSelectProject = async (project) => {
     try {
       console.log('🎯 Selecting project:', project);
       
-      // ✅ FIX 1: Clear all stale data immediately
+      // ✅ Clear all stale data immediately
       console.log('🧹 Cleaning up previous project data...');
-      setTimeReadings([]); // Clear old recordings immediately
-      setProcesses([]); // Clear old processes
-      setRecordingsNeedRefresh(false); // Reset refresh flag
-      timerHook.cleanupAllTimers(); // Stop any running timers
+      setTimeReadings([]);
+      setProcesses([]);
+      setRecordingsNeedRefresh(false);
+      timerHook.cleanupAllTimers();
       
       // Update current project
       setCurrentProject(project);
@@ -92,7 +90,7 @@ function AppContent() {
       console.log('🔄 Loading processes for project:', project.id);
       await loadProcessesForProject(project.id);
       
-      // ✅ FIX 2: If recordings view is open, load new recordings immediately
+      // ✅ If recordings view is open, load new recordings immediately
       if (showTimeReadings) {
         console.log('🔄 Loading recordings for new project...');
         await loadTimeReadingsForProject(project.id);
@@ -105,24 +103,23 @@ function AppContent() {
     }
   };
 
-  // ✅ UPDATED: Enhanced back to projects with proper cleanup
+  // ✅ Enhanced back to projects with proper cleanup
   const handleBackToProjects = () => {
     console.log('🔙 Going back to projects dashboard');
     
-    // ✅ FIX 3: Comprehensive cleanup
+    // ✅ Comprehensive cleanup
     setCurrentProject(null);
     currentProjectRef.current = null;
     setProcesses([]);
-    setTimeReadings([]); // Clear recordings
+    setTimeReadings([]);
     setRecordingsNeedRefresh(false);
-    setShowTimeReadings(false); // Close recordings view
-    setShowAnalytics(false); // Close analytics
+    setShowTimeReadings(false);
     timerHook.cleanupAllTimers();
     
     notifications.showInfo('Project Saved', 'Your work has been saved');
   };
 
-  // ✅ NEW: Project-specific time readings loader
+  // ✅ Project-specific time readings loader
   const loadTimeReadingsForProject = async (projectId) => {
     try {
       console.log('🔄 Loading time readings for project:', projectId);
@@ -137,7 +134,7 @@ function AppContent() {
     }
   };
 
-  // ✅ UPDATED: Enhanced time readings loader with project validation
+  // ✅ Enhanced time readings loader with project validation
   const loadTimeReadings = async () => {
     if (!currentProject?.id) {
       console.log('❌ No current project for time readings');
@@ -148,13 +145,12 @@ function AppContent() {
     await loadTimeReadingsForProject(currentProject.id);
   };
 
-  // ✅ UPDATED: Enhanced toggle with immediate data loading
+  // ✅ Enhanced toggle with immediate data loading
   const toggleViewRecordings = async () => {
     const willShow = !showTimeReadings;
     setShowTimeReadings(willShow);
     
     if (willShow) {
-      // Opening recordings view
       if (recordingsNeedRefresh || timeReadings.length === 0) {
         console.log('🔄 Loading recordings on view open...');
         await loadTimeReadings();
@@ -162,16 +158,15 @@ function AppContent() {
     }
   };
 
-  // ✅ NEW: Function to notify when new time reading is added
+  // ✅ Function to notify when new time reading is added
   const notifyNewTimeReading = useCallback(() => {
     console.log('📢 New time reading added - flagging for refresh');
     setRecordingsNeedRefresh(true);
     
-    // If recordings view is currently open, refresh immediately
     if (showTimeReadings) {
       setTimeout(() => {
         refreshRecordingsIfVisible();
-      }, 100); // Small delay to ensure database is updated
+      }, 100);
     }
   }, [showTimeReadings, refreshRecordingsIfVisible]);
 
@@ -196,7 +191,6 @@ function AppContent() {
   useEffect(() => {
     checkUser();
     
-    // Listen for login/logout changes
     const { data: { subscription } } = auth.onAuthChange((event, session) => {
       if (session?.user) {
         setUser(session.user);
@@ -205,7 +199,7 @@ function AppContent() {
         setCurrentProject(null);
         currentProjectRef.current = null;
         setProcesses([]);
-        setTimeReadings([]); // ✅ Clear recordings on logout
+        setTimeReadings([]);
         setRecordingsNeedRefresh(false);
         timerHook.cleanupAllTimers();
       }
@@ -236,7 +230,6 @@ function AppContent() {
       const newProject = await db.createProject(projectData);
       console.log('✅ Project created:', newProject);
       
-      // Auto-select the newly created project with cleanup
       await handleSelectProject(newProject);
       
       notifications.showSuccess('Project Created', `${projectData.company_name} project has been created`);
@@ -257,9 +250,8 @@ function AppContent() {
       console.log('🗑️ Deleting project:', projectId);
       await db.deleteProject(projectId);
       
-      // If we're currently viewing this project, go back to dashboard
       if (currentProject && currentProject.id === projectId) {
-        handleBackToProjects(); // Use the enhanced cleanup function
+        handleBackToProjects();
       }
       
       notifications.showSuccess('Project Deleted', 'Project and all data have been removed');
@@ -362,8 +354,6 @@ function AppContent() {
     try {
       setProcesses((processes || []).filter(p => p.id !== processId));
       timerHook.cleanupAllTimers();
-      
-      // ✅ FIX 4: Notify that recordings may need refresh after deletion
       setRecordingsNeedRefresh(true);
       
       setTimeout(async () => {
@@ -384,7 +374,7 @@ function AppContent() {
     }
   };
 
-  // =================== EXPORT AND BACKUP FUNCTIONS ===================
+  // =================== EXPORT FUNCTION ===================
 
   const handleExport = async () => {
     try {
@@ -441,40 +431,6 @@ function AppContent() {
       notifications.showError('Export Failed', error.message);
       console.error('Export error:', error);
     }
-  };
-
-  const createAutoBackup = async () => {
-    try {
-      const backupData = {
-        project: currentProject,
-        processes: processes || [],
-        timestamp: new Date().toISOString(),
-        user: user.email
-      };
-
-      const dataStr = JSON.stringify(backupData, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const filename = currentProject?.company_name?.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project';
-      link.download = `${filename}-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      notifications.showInfo('Auto Backup', 'Project backup created automatically');
-    } catch (error) {
-      console.error('Auto backup error:', error);
-    }
-  };
-
-  const handleManualBackup = async () => {
-    await createAutoBackup();
   };
 
   // =================== UI HELPER FUNCTIONS ===================
@@ -605,18 +561,9 @@ function AppContent() {
                 >
                   <FileText className="mr-2" size={16} />
                   {showTimeReadings ? 'Hide' : 'View'} Recordings
-                  {/* ✅ NEW: Visual indicator for pending refresh */}
                   {recordingsNeedRefresh && !showTimeReadings && (
                     <span className="ml-1 w-2 h-2 bg-orange-400 rounded-full"></span>
                   )}
-                </button>
-                
-                <button
-                  onClick={() => setShowAnalytics(!showAnalytics)}
-                  className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium transition-colors flex items-center"
-                >
-                  <BarChart3 className="mr-2" size={16} />
-                  Analytics
                 </button>
                 
                 <button
@@ -625,14 +572,6 @@ function AppContent() {
                 >
                   <Download className="mr-2" size={16} />
                   Export
-                </button>
-
-                <button
-                  onClick={handleManualBackup}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors flex items-center"
-                >
-                  <Save className="mr-2" size={16} />
-                  Backup
                 </button>
                 
                 <SetupModeToggle 
@@ -698,61 +637,13 @@ function AppContent() {
           </div>
         )}
 
-        {showAnalytics && (
-          <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg md:text-xl font-bold">Project Analytics</h2>
-              <button
-                onClick={() => setShowAnalytics(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕ Close
-              </button>
-            </div>
-            
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <h3 className="font-semibold text-blue-800">Current Project:</h3>
-              <p className="text-blue-600">{currentProject?.company_name} - {currentProject?.plant_name}</p>
-              <p className="text-sm text-blue-500">Product: {currentProject?.product}</p>
-            </div>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-blue-600">{(processes || []).length}</div>
-                <div className="text-sm text-blue-800">Processes</div>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {(processes || []).reduce((sum, p) => sum + (p.subprocesses?.length || 0), 0)}
-                </div>
-                <div className="text-sm text-green-800">Subprocesses</div>
-              </div>
-              <div className="bg-orange-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-orange-600">
-                  {timerHook.getActiveTimers().length}
-                </div>
-                <div className="text-sm text-orange-800">Active Timers</div>
-              </div>
-              <div className="bg-purple-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-purple-600">{(timeReadings || []).length}</div>
-                <div className="text-sm text-purple-800">Time Recordings</div>
-              </div>
-            </div>
-            
-            <div className="mt-4 text-xs text-gray-500 text-center">
-              📊 Analytics shown for current project only
-            </div>
-          </div>
-        )}
-
-        {/* ✅ UPDATED: Enhanced time readings section with better status indicators */}
+        {/* Time Readings Section */}
         {showTimeReadings && (
           <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg md:text-xl font-bold">Time Recordings</h2>
-                  {/* ✅ NEW: Auto-refresh indicator */}
                   {recordingsNeedRefresh && (
                     <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded">
                       Updates Available
@@ -764,7 +655,6 @@ function AppContent() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {/* ✅ NEW: Manual refresh button */}
                 <button
                   onClick={loadTimeReadings}
                   className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors"
@@ -835,7 +725,6 @@ function AppContent() {
               notifications={notifications}
               isMobile={isMobile}
               hapticFeedback={hapticFeedback}
-              // ✅ NEW: Pass callback to notify when new time reading is added
               onTimeReadingAdded={notifyNewTimeReading}
             />
           ))}
