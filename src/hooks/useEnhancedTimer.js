@@ -1,5 +1,5 @@
 // src/hooks/useEnhancedTimer.js
-// Fixed version - Stop doesn't record, Lap works properly in sequence mode
+// Enhanced version with pause functionality and improved stop/reset behavior
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
@@ -46,21 +46,76 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
     }
 
     const timerKey = `${processId}-${subprocessId}`;
+    const existingTimer = timersRef.current[timerKey];
     
-    if (timersRef.current[timerKey]?.running) {
+    // If timer exists and is paused, resume it
+    if (existingTimer && !existingTimer.running && existingTimer.pausedAt) {
+      console.log('▶️ Resuming paused timer:', timerKey);
+      
+      const pausedDuration = existingTimer.pausedAt - existingTimer.startTime;
+      const newStartTime = Date.now() - pausedDuration;
+      
+      const resumedTimer = {
+        ...existingTimer,
+        running: true,
+        startTime: newStartTime,
+        pausedAt: null
+      };
+      
+      // Update both ref and state immediately
+      timersRef.current[timerKey] = resumedTimer;
+      
+      setTimers(prev => ({
+        ...prev,
+        [timerKey]: resumedTimer
+      }));
+      
+      // Restart interval
+      const intervalId = setInterval(() => {
+        const currentTimer = timersRef.current[timerKey];
+        if (!currentTimer || !currentTimer.running) {
+          clearInterval(intervalId);
+          return;
+        }
+      
+        const elapsed = Date.now() - currentTimer.startTime;
+        
+        // Update ref immediately
+        timersRef.current[timerKey] = {
+          ...currentTimer,
+          elapsedTime: elapsed
+        };
+        
+        // Update state
+        setTimers(prev => ({
+          ...prev,
+          [timerKey]: {
+            ...prev[timerKey],
+            elapsedTime: elapsed
+          }
+        }));
+      }, 50);
+
+      intervalRefs.current[timerKey] = intervalId;
+      console.log(`✅ Timer resumed successfully: ${timerKey}`);
+      return true;
+    }
+    
+    if (existingTimer?.running) {
       console.log('⚠️ Timer already running:', timerKey);
       return false;
     }
 
     const startTime = Date.now();
-    console.log('▶️ Starting timer:', timerKey);
+    console.log('▶️ Starting new timer:', timerKey);
 
     const newTimer = {
       running: true,
       startTime: startTime,
       elapsedTime: 0,
       laps: [],
-      lastRecordedTime: null
+      lastRecordedTime: null,
+      pausedAt: null
     };
 
     // Update both ref and state immediately
@@ -103,52 +158,59 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
     return true;
   }, [notifications]);
 
-  // ✅ FIX 1: Stop timer WITHOUT recording time
-  const stopTimer = useCallback((processId, subprocessId) => {
+  // ✅ NEW: Pause timer (stops but keeps time data)
+  const pauseTimer = useCallback((processId, subprocessId) => {
     const timerKey = `${processId}-${subprocessId}`;
     const timer = timersRef.current[timerKey];
     
     if (!timer || !timer.running) {
-      console.log('⚠️ No active timer to stop:', timerKey);
+      console.log('⚠️ No active timer to pause:', timerKey);
       return null;
     }
 
-    console.log('⏹️ Stopping timer WITHOUT recording:', timerKey);
+    console.log('⏸️ Pausing timer:', timerKey);
 
     if (intervalRefs.current[timerKey]) {
       clearInterval(intervalRefs.current[timerKey]);
       delete intervalRefs.current[timerKey];
     }
 
-    const finalElapsed = Date.now() - timer.startTime;
-    const stoppedTimer = {
+    const pauseTime = Date.now();
+    const finalElapsed = pauseTime - timer.startTime;
+    const pausedTimer = {
       ...timer,
       running: false,
-      elapsedTime: finalElapsed
+      elapsedTime: finalElapsed,
+      pausedAt: pauseTime
     };
 
     // Update both ref and state
-    timersRef.current[timerKey] = stoppedTimer;
+    timersRef.current[timerKey] = pausedTimer;
     
     setTimers(prev => ({
       ...prev,
-      [timerKey]: stoppedTimer
+      [timerKey]: pausedTimer
     }));
 
-    // ✅ Return time data but mark it as NOT for recording
+    // Return time data but mark it as NOT for recording
     const timeData = {
       timeMilliseconds: finalElapsed,
       startTime: new Date(timer.startTime).toISOString(),
-      endTime: new Date().toISOString(),
+      endTime: new Date(pauseTime).toISOString(),
       formattedTime: formatTime(finalElapsed),
-      shouldRecord: false  // ✅ Flag to indicate this should NOT be saved
+      shouldRecord: false  // Flag to indicate this should NOT be saved
     };
 
-    console.log(`⏹️ Timer stopped (not recorded): ${timerKey}, Duration: ${timeData.formattedTime}`);
+    console.log(`⏸️ Timer paused: ${timerKey}, Duration: ${timeData.formattedTime}`);
     return timeData;
   }, [formatTime]);
 
-  // ✅ FIX 2: Record lap with INSTANT restart and better sequence handling
+  // ✅ UPDATED: Stop timer (same as pause for backward compatibility)
+  const stopTimer = useCallback((processId, subprocessId) => {
+    return pauseTimer(processId, subprocessId);
+  }, [pauseTimer]);
+
+  // ✅ UPDATED: Record lap with INSTANT restart and better sequence handling
   const recordLap = useCallback((processId, subprocessId) => {
     const timerKey = `${processId}-${subprocessId}`;
     const timer = timersRef.current[timerKey];
@@ -170,16 +232,17 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
       endTime: new Date(lapEndTime).toISOString(),
       formattedTime: formatTime(elapsedTime),
       lapNumber: (timer.laps?.length || 0) + 1,
-      shouldRecord: true  // ✅ Flag to indicate this SHOULD be saved
+      shouldRecord: true  // Flag to indicate this SHOULD be saved
     };
   
     // ✅ INSTANT UPDATE: Reset timer immediately for continuous timing
     const updatedTimer = {
       ...timer,
       laps: [...(timer.laps || []), lapData],
-      startTime: newStartTime,  // ✅ Immediate restart
-      elapsedTime: 0,           // ✅ Reset to zero
-      lastRecordedTime: lapData.formattedTime
+      startTime: newStartTime,  // Immediate restart
+      elapsedTime: 0,           // Reset to zero
+      lastRecordedTime: lapData.formattedTime,
+      pausedAt: null            // Clear any pause state
     };
   
     // ✅ Update refs and state immediately - no delays
@@ -194,7 +257,7 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
     return lapData;
   }, [formatTime]);
 
-  // Reset a timer
+  // ✅ UPDATED: Reset timer (completely clears timer)
   const resetTimer = useCallback((processId, subprocessId) => {
     const timerKey = `${processId}-${subprocessId}`;
     
@@ -231,8 +294,8 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
       return formatTime(currentElapsed);
     }
     
-    // For stopped timers, use stored elapsed time
-    return formatTime(timer.elapsedTime);
+    // For stopped/paused timers, use stored elapsed time
+    return formatTime(timer.elapsedTime || 0);
   }, [timers, formatTime]);
 
   // Check if timer is running
@@ -240,6 +303,13 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
     const timerKey = `${processId}-${subprocessId}`;
     const timer = timersRef.current[timerKey] || timers[timerKey];
     return timer?.running || false;
+  }, [timers]);
+
+  // ✅ NEW: Check if timer is paused
+  const isTimerPaused = useCallback((processId, subprocessId) => {
+    const timerKey = `${processId}-${subprocessId}`;
+    const timer = timersRef.current[timerKey] || timers[timerKey];
+    return timer && !timer.running && timer.pausedAt && timer.elapsedTime > 0;
   }, [timers]);
 
   // Get last recorded time for display
@@ -292,13 +362,15 @@ export function useEnhancedTimer(setupMode = false, notifications = null) {
   return {
     // Core timer functions
     startTimer,
-    stopTimer,      // ✅ Now stops WITHOUT recording
-    resetTimer,
-    recordLap,      // ✅ Now has instant restart for sequence mode
+    stopTimer,      // Now stops/pauses WITHOUT recording
+    pauseTimer,     // ✅ NEW: Explicit pause function
+    resetTimer,     // Completely resets timer
+    recordLap,      // Records time and restarts immediately
     
     // Query functions
     getTimerDisplay,
     isTimerRunning,
+    isTimerPaused,  // ✅ NEW: Check if paused
     getLastRecordedTime,
     getActiveTimers,
     
