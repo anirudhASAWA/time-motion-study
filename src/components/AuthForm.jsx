@@ -12,13 +12,18 @@ function AuthForm({ onSuccess }) {
     e.preventDefault();
     setLoading(true);
     setMessage('');
-
+  
     try {
       let result;
       if (isSignUp) {
         result = await auth.signUp(email, password);
         if (result.success) {
-          setMessage('Check your email for verification link!');
+          if (result.needsConfirmation) {
+            setMessage('Check your email for verification link!');
+          } else {
+            setMessage('Account created successfully!');
+            onSuccess();
+          }
         }
       } else {
         result = await auth.signIn(email, password);
@@ -26,14 +31,14 @@ function AuthForm({ onSuccess }) {
           onSuccess();
         }
       }
-
+  
       if (!result.success) {
         setMessage(result.error);
       }
     } catch (error) {
       setMessage('Something went wrong. Please try again.');
     }
-
+  
     setLoading(false);
   };
 
