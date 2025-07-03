@@ -1,5 +1,5 @@
 // src/data/supabase.js
-// Fixed version with proper project isolation
+// Complete version with all required functions
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -247,8 +247,10 @@ export const db = {
     return data
   },
 
-  // Update subprocess
+  // ✅ MISSING FUNCTION: Update subprocess
   async updateSubprocess(subprocessId, updates) {
+    console.log('🔄 Updating subprocess:', subprocessId, updates);
+    
     const { data, error } = await supabase
       .from('subprocesses')
       .update({
@@ -260,22 +262,68 @@ export const db = {
       .single()
     
     if (error) {
+      console.error('❌ Error updating subprocess:', error);
       throw error
     }
+    
+    console.log('✅ Subprocess updated:', data);
     return data
   },
 
-  // Delete subprocess (CASCADE will delete time_readings)
+  // ✅ MISSING FUNCTION: Delete subprocess (CASCADE will delete time_readings)
   async deleteSubprocess(subprocessId) {
+    console.log('🗑️ Deleting subprocess:', subprocessId);
+    
     const { error } = await supabase
       .from('subprocesses')
       .delete()
       .eq('id', subprocessId)
     
     if (error) {
+      console.error('❌ Error deleting subprocess:', error);
       throw error
     }
+    
+    console.log('✅ Subprocess deleted successfully');
     return true
+  },
+
+  async deleteTimeReading(readingId) {
+    console.log('🗑️ Deleting time reading:', readingId);
+    
+    const { error } = await supabase
+      .from('time_readings')
+      .delete()
+      .eq('id', readingId)
+    
+    if (error) {
+      console.error('❌ Error deleting time reading:', error);
+      throw error
+    }
+    
+    console.log('✅ Time reading deleted successfully');
+    return true
+  },
+  async updateTimeReading(readingId, updates) {
+    console.log('🔄 Updating time reading:', readingId, updates);
+    
+    const { data, error } = await supabase
+      .from('time_readings')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', readingId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('❌ Error updating time reading:', error);
+      throw error
+    }
+    
+    console.log('✅ Time reading updated:', data);
+    return data
   },
 
   // =================== PROJECT-SPECIFIC TIME RECORDINGS ===================
@@ -374,6 +422,75 @@ export const db = {
     return data || []
   },
 
+  // =================== ADVANCED OPERATIONS ===================
+
+  // Update subprocess properties (for form data)
+  async updateSubprocessProperties(subprocessId, properties) {
+    console.log('🔄 Updating subprocess properties:', subprocessId, properties);
+    
+    const { data, error } = await supabase
+      .from('subprocesses')
+      .update({
+        activity_type: properties.activityType,
+        person_count: properties.personCount,
+        production_qty: properties.productionQty,
+        rating: properties.rating,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', subprocessId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('❌ Error updating subprocess properties:', error);
+      throw error
+    }
+    
+    console.log('✅ Subprocess properties updated:', data);
+    return data
+  },
+
+  // Delete time reading
+  async deleteTimeReading(readingId) {
+    console.log('🗑️ Deleting time reading:', readingId);
+    
+    const { error } = await supabase
+      .from('time_readings')
+      .delete()
+      .eq('id', readingId)
+    
+    if (error) {
+      console.error('❌ Error deleting time reading:', error);
+      throw error
+    }
+    
+    console.log('✅ Time reading deleted successfully');
+    return true
+  },
+
+  // Update time reading
+  async updateTimeReading(readingId, updates) {
+    console.log('🔄 Updating time reading:', readingId, updates);
+    
+    const { data, error } = await supabase
+      .from('time_readings')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', readingId)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('❌ Error updating time reading:', error);
+      throw error
+    }
+    
+    console.log('✅ Time reading updated:', data);
+    return data
+  },
+
   // =================== PROJECT STATISTICS ===================
 
   // Get statistics for a specific project
@@ -423,14 +540,21 @@ export const auth = {
   async signUp(email, password) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
-      password: password
+      password: password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`
+      }
     })
     
     if (error) {
       return { success: false, error: error.message }
     }
     
-    return { success: true, user: data.user }
+    return { 
+      success: true, 
+      user: data.user,
+      needsConfirmation: !data.user?.email_confirmed_at
+    }
   },
   
   async signIn(email, password) {
@@ -463,5 +587,31 @@ export const auth = {
 
   onAuthChange(callback) {
     return supabase.auth.onAuthStateChange(callback)
+  },
+
+  // Reset password
+  async resetPassword(email) {
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    })
+    
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data }
+  },
+
+  // Update password
+  async updatePassword(newPassword) {
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword
+    })
+    
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, user: data.user }
   }
 }
