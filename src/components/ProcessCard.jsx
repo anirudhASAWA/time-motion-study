@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Play, Square, RotateCcw, Plus, Trash2, Edit3, Clock, Zap } from 'lucide-react';
+import { Play, Square, RotateCcw, Plus, Trash2, Edit3, Clock, Zap, Pause, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { db } from '../data/supabase';
 
 function ProcessCard({ 
@@ -68,6 +68,69 @@ function ProcessCard({
       setIsAddingSubprocess(false);
     }
   }, [newSubprocessName, process.id, onReloadProcesses, isAddingSubprocess, notifications, hapticFeedback]);
+
+  // ✅ NEW: Delete subprocess function
+  const deleteSubprocess = useCallback(async (subprocessId, subprocessName) => {
+    if (!window.confirm(`Delete subprocess "${subprocessName}" and all its time readings? This action cannot be undone.`)) {
+      return;
+    }
+
+    hapticFeedback();
+    
+    try {
+      console.log('🗑️ Deleting subprocess:', subprocessId);
+      
+      // Stop timer if running for this subprocess
+      if (timerHook.isTimerRunning(process.id, subprocessId)) {
+        timerHook.resetTimer(process.id, subprocessId);
+      }
+      
+      await db.deleteSubprocess(subprocessId);
+      await onReloadProcesses();
+      
+      notifications?.showSuccess('Subprocess Deleted', `"${subprocessName}" and all its data have been removed`);
+    } catch (error) {
+      console.error('❌ Error deleting subprocess:', error);
+      notifications?.showError('Delete Error', 'Failed to delete subprocess');
+    }
+  }, [process.id, timerHook, onReloadProcesses, notifications, hapticFeedback]);
+
+  // ✅ NEW: Reorder subprocess function
+  const reorderSubprocess = useCallback(async (subprocessId, direction) => {
+    hapticFeedback();
+    
+    try {
+      const subprocesses = [...(process.subprocesses || [])];
+      const currentIndex = subprocesses.findIndex(sp => sp.id === subprocessId);
+      
+      if (currentIndex === -1) return;
+      
+      let newIndex;
+      if (direction === 'up' && currentIndex > 0) {
+        newIndex = currentIndex - 1;
+      } else if (direction === 'down' && currentIndex < subprocesses.length - 1) {
+        newIndex = currentIndex + 1;
+      } else {
+        return; // Can't move further
+      }
+      
+      // Swap the subprocesses
+      [subprocesses[currentIndex], subprocesses[newIndex]] = [subprocesses[newIndex], subprocesses[currentIndex]];
+      
+      // Update order_index for both subprocesses
+      await Promise.all([
+        db.updateSubprocess(subprocesses[currentIndex].id, { order_index: currentIndex }),
+        db.updateSubprocess(subprocesses[newIndex].id, { order_index: newIndex })
+      ]);
+      
+      await onReloadProcesses();
+      notifications?.showSuccess('Subprocess Reordered', 'Subprocess order has been updated');
+      
+    } catch (error) {
+      console.error('❌ Error reordering subprocess:', error);
+      notifications?.showError('Reorder Error', 'Failed to reorder subprocess');
+    }
+  }, [process.subprocesses, onReloadProcesses, notifications, hapticFeedback]);
 
   const saveEdit = async () => {
     if (editName.trim() && editName !== process.name) {
@@ -312,6 +375,7 @@ function ProcessCard({
                     setEditing(true);
                   }}
                   className="p-1 text-gray-500 hover:text-gray-700"
+                  title="Edit process name"
                 >
                   <Edit3 size={16} />
                 </button>
@@ -347,6 +411,7 @@ function ProcessCard({
                 onDeleteProcess(process.id);
               }}
               className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded"
+              title="Delete process"
             >
               <Trash2 size={16} />
             </button>
@@ -372,10 +437,6 @@ function ProcessCard({
             </div>
             <div className="text-xs text-blue-600 mt-1">
               Use Start/Stop/Lap buttons normally, or use "Next Step" to auto-advance
-            </div>
-            {/* ✅ Enhanced Debug info */}
-            <div className="text-xs text-gray-500 mt-1 font-mono">
-              Debug: currentIndex={currentSequenceIndex}, subprocesses={process.subprocesses?.length || 0}, sequenceMode={sequenceMode}
             </div>
           </div>
         )}
@@ -417,8 +478,12 @@ function ProcessCard({
                 key={subprocess.id}
                 processId={process.id}
                 subprocess={subprocess}
+                subprocessIndex={index}
+                totalSubprocesses={process.subprocesses?.length || 0}
                 timerHook={timerHook}
                 onReloadProcesses={onReloadProcesses}
+                onDeleteSubprocess={deleteSubprocess}
+                onReorderSubprocess={reorderSubprocess} // ✅ NEW: Pass reorder function
                 isActiveInSequence={isActiveInSequence}
                 sequenceMode={sequenceMode}
                 notifications={notifications}
@@ -441,12 +506,16 @@ function ProcessCard({
   );
 }
 
-// ✅ SubprocessCard component (unchanged but with better debugging)
+// ✅ UPDATED: SubprocessCard with reorder controls and delete latest reading
 function SubprocessCard({ 
   processId, 
   subprocess, 
+  subprocessIndex,
+  totalSubprocesses,
   timerHook, 
   onReloadProcesses,
+  onDeleteSubprocess,
+  onReorderSubprocess, // ✅ NEW: Reorder function
   isActiveInSequence,
   sequenceMode,
   notifications,
@@ -460,6 +529,11 @@ function SubprocessCard({
   const [rating, setRating] = useState(subprocess.rating || 100);
   const [productionQty, setProductionQty] = useState(subprocess.production_qty || 0);
   const [lastRecordedTime, setLastRecordedTime] = useState(null);
+  const [canDeleteLatest, setCanDeleteLatest] = useState(false); // ✅ NEW: Track if can delete latest
+  
+  // ✅ NEW: Editing state for subprocess
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(subprocess.name);
 
   const isRunning = timerHook.isTimerRunning(processId, subprocess.id);
   const timerDisplay = timerHook.getTimerDisplay(processId, subprocess.id);
@@ -474,8 +548,56 @@ function SubprocessCard({
     
     if (timerLastTime && timerLastTime !== lastRecordedTime) {
       setLastRecordedTime(timerLastTime);
+      setCanDeleteLatest(true); // ✅ NEW: Enable delete latest when new reading is recorded
     }
   }, [timerHook, processId, subprocess.id, lastRecordedTime]);
+
+  // ✅ NEW: Delete latest reading function
+  const deleteLatestReading = useCallback(async () => {
+    if (!window.confirm('Delete the latest time reading for this subprocess?')) {
+      return;
+    }
+
+    hapticFeedback();
+    
+    try {
+      // Get the latest reading for this subprocess
+      const readings = await db.getSubprocessReadings(subprocess.id, 1);
+      
+      if (readings && readings.length > 0) {
+        const latestReading = readings[0];
+        await db.deleteTimeReading(latestReading.id);
+        
+        setLastRecordedTime(null);
+        setCanDeleteLatest(false);
+        onTimeReadingAdded(); // Refresh the recordings view
+        
+        notifications?.showSuccess('Reading Deleted', 'Latest time reading has been removed');
+      } else {
+        notifications?.showError('No Reading', 'No time reading found to delete');
+      }
+    } catch (error) {
+      console.error('❌ Error deleting latest reading:', error);
+      notifications?.showError('Delete Error', 'Failed to delete latest reading');
+    }
+  }, [subprocess.id, onTimeReadingAdded, notifications, hapticFeedback]);
+
+  // ✅ NEW: Save subprocess edits
+  const saveSubprocessEdit = async () => {
+    if (editName.trim() && editName !== subprocess.name) {
+      hapticFeedback();
+      try {
+        await db.updateSubprocess(subprocess.id, { name: editName.trim() });
+        await onReloadProcesses();
+        notifications?.showSuccess('Subprocess Updated', 'Subprocess name has been updated');
+      } catch (error) {
+        console.error('Error updating subprocess:', error);
+        notifications?.showError('Update Error', 'Failed to update subprocess');
+        setEditName(subprocess.name); // Revert on error
+      }
+    }
+    setIsEditing(false);
+  };
 
   const handleStart = () => {
     hapticFeedback();
@@ -489,16 +611,16 @@ function SubprocessCard({
     }
   };
 
+  // ✅ FIXED: Stop now pauses instead of resetting
   const handleStop = () => {
     hapticFeedback();
-    console.log(`⏹️ Stop button pressed for: ${subprocess.name}`);
+    console.log(`⏸️ Pause button pressed for: ${subprocess.name}`);
     
-    const timeData = timerHook.stopTimer(processId, subprocess.id);
+    const timeData = timerHook.pauseTimer(processId, subprocess.id);
     
     if (timeData) {
-      setLastRecordedTime(null);
-      notifications?.showInfo('Timer Stopped', 
-        `Timer stopped at ${timeData.formattedTime} (not recorded)`);
+      notifications?.showInfo('Timer Paused', 
+        `Timer paused at ${timeData.formattedTime}`);
     }
   };
 
@@ -510,6 +632,7 @@ function SubprocessCard({
     
     if (timeData && timeData.shouldRecord) {
       setLastRecordedTime(timeData.formattedTime);
+      setCanDeleteLatest(true); // ✅ NEW: Enable delete latest after lap
       
       setTimeout(async () => {
         try {
@@ -536,11 +659,12 @@ function SubprocessCard({
     }
   };
 
+  // ✅ NEW: Separate reset function
   const handleReset = () => {
     hapticFeedback();
     timerHook.resetTimer(processId, subprocess.id);
     setLastRecordedTime(null);
-    notifications?.showInfo('Timer Reset', 'Timer has been reset');
+    notifications?.showInfo('Timer Reset', 'Timer has been reset to 00:00:00');
   };
 
   useEffect(() => {
@@ -548,12 +672,14 @@ function SubprocessCard({
       window.updateSubprocessLastTime[`${processId}-${subprocess.id}`] = (time) => {
         console.log(`🎯 Updating last recorded time for ${subprocess.name}: ${time}`);
         setLastRecordedTime(time);
+        setCanDeleteLatest(true); // ✅ NEW: Enable delete latest when time is updated
       };
     } else {
       window.updateSubprocessLastTime = {
         [`${processId}-${subprocess.id}`]: (time) => {
           console.log(`🎯 Updating last recorded time for ${subprocess.name}: ${time}`);
           setLastRecordedTime(time);
+          setCanDeleteLatest(true); // ✅ NEW: Enable delete latest when time is updated
         }
       };
     }
@@ -571,17 +697,92 @@ function SubprocessCard({
         ? 'border-blue-500 bg-blue-50 shadow-md border-2' 
         : 'border-gray-200 bg-gray-50'
     }`}>
-      {/* ✅ Enhanced: Subprocess Header with better active indication */}
+      {/* ✅ ENHANCED: Subprocess Header with reorder controls and edit functionality */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <h4 className="font-medium text-gray-800 text-sm md:text-base">{subprocess.name}</h4>
-            {isActiveInSequence && (
+            {/* ✅ NEW: Reorder controls */}
+            <div className="flex flex-col">
+              <button
+                onClick={() => onReorderSubprocess(subprocess.id, 'up')}
+                disabled={subprocessIndex === 0}
+                className={`p-1 rounded ${subprocessIndex === 0 ? 'text-gray-300' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'}`}
+                title="Move up"
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                onClick={() => onReorderSubprocess(subprocess.id, 'down')}
+                disabled={subprocessIndex === totalSubprocesses - 1}
+                className={`p-1 rounded ${subprocessIndex === totalSubprocesses - 1 ? 'text-gray-300' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-200'}`}
+                title="Move down"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+
+            {isEditing ? (
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="font-medium text-gray-800 text-sm md:text-base bg-white border border-gray-300 rounded px-2 py-1 flex-1"
+                  onKeyPress={(e) => e.key === 'Enter' && saveSubprocessEdit()}
+                  autoFocus
+                />
+                <button
+                  onClick={saveSubprocessEdit}
+                  className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditName(subprocess.name);
+                    setIsEditing(false);
+                  }}
+                  className="px-2 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <>
+                <h4 className="font-medium text-gray-800 text-sm md:text-base">{subprocess.name}</h4>
+                
+                {/* ✅ Edit button for subprocess */}
+                <button
+                  onClick={() => {
+                    hapticFeedback();
+                    setIsEditing(true);
+                  }}
+                  className="p-1 text-gray-500 hover:text-gray-700"
+                  title="Edit subprocess name"
+                >
+                  <Edit3 size={12} />
+                </button>
+                
+                {/* ✅ Delete button for subprocess */}
+                <button
+                  onClick={() => {
+                    hapticFeedback();
+                    onDeleteSubprocess(subprocess.id, subprocess.name);
+                  }}
+                  className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded"
+                  title="Delete subprocess"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+            
+            {!isEditing && isActiveInSequence && (
               <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full font-medium">
                 ACTIVE
               </span>
             )}
-            {sequenceMode && !isActiveInSequence && (
+            {!isEditing && sequenceMode && !isActiveInSequence && (
               <span className="px-2 py-1 bg-gray-300 text-gray-600 text-xs rounded-full">
                 WAITING
               </span>
@@ -593,19 +794,31 @@ function SubprocessCard({
             {timerDisplay}
           </div>
           
-          {/* Last Recorded Time Display */}
+          {/* Last Recorded Time Display with Delete Latest button */}
           {lastRecordedTime && (
             <div className="mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm">
-              <span className="text-green-800 font-medium">
-                ✅ Last: {lastRecordedTime}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-green-800 font-medium">
+                  ✅ Last: {lastRecordedTime}
+                </span>
+                {/* ✅ NEW: Delete latest reading button */}
+                {canDeleteLatest && (
+                  <button
+                    onClick={deleteLatestReading}
+                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-100 rounded"
+                    title="Delete latest reading"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Timer Controls */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* ✅ UPDATED: Timer Controls with Pause and Reset */}
+      <div className="grid grid-cols-4 gap-2 mb-4">
         {!isRunning ? (
           <button
             onClick={handleStart}
@@ -617,10 +830,10 @@ function SubprocessCard({
         ) : (
           <button
             onClick={handleStop}
-            className="flex items-center justify-center px-3 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors min-h-[44px]"
+            className="flex items-center justify-center px-3 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors min-h-[44px]"
           >
-            <Square className="mr-1" size={16} />
-            Stop
+            <Pause className="mr-1" size={16} />
+            Pause
           </button>
         )}
         
@@ -634,11 +847,14 @@ function SubprocessCard({
         
         <button
           onClick={handleReset}
-          className="flex items-center justify-center px-3 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors min-h-[44px]"
+          className="flex items-center justify-center px-3 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors min-h-[44px]"
         >
           <RotateCcw className="mr-1" size={14} />
           Reset
         </button>
+        
+        {/* Empty slot for grid alignment */}
+        <div></div>
       </div>
 
       {/* Form Fields */}
