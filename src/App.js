@@ -1,5 +1,5 @@
 // src/App.js
-// Updated version - Removed Analytics Dashboard and Backup features
+// Enhanced version with delete individual readings functionality
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { auth, db } from './data/supabase.js';
@@ -11,7 +11,7 @@ import AuthForm from './components/AuthForm.jsx';
 import ProcessCard from './components/ProcessCard.jsx';
 import MobileActionBar, { MobileAddProcessModal } from './components/MobileActionbar.jsx';
 import ProjectDashboard from './components/ProjectDashboard.jsx';
-import { Clock, Plus, Download, LogOut, FileText, ArrowLeft } from 'lucide-react';
+import { Clock, Plus, Download, LogOut, FileText, ArrowLeft, Trash2 } from 'lucide-react';
 
 // Main App Component wrapped with providers
 function App() {
@@ -69,6 +69,28 @@ function AppContent() {
       refreshRecordingsIfVisible();
     }
   }, [recordingsNeedRefresh, refreshRecordingsIfVisible]);
+
+  // ✅ NEW: Delete individual time reading function
+  const deleteTimeReading = useCallback(async (readingId, subprocessName, formattedTime) => {
+    if (!window.confirm(`Delete time reading "${formattedTime}" for ${subprocessName}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      console.log('🗑️ Deleting time reading:', readingId);
+      
+      await db.deleteTimeReading(readingId);
+      
+      // Refresh the recordings view
+      await refreshRecordingsIfVisible();
+      
+      notifications.showSuccess('Reading Deleted', `Time reading for ${subprocessName} has been removed`);
+      
+    } catch (error) {
+      console.error('❌ Error deleting time reading:', error);
+      notifications.showError('Delete Error', 'Failed to delete time reading');
+    }
+  }, [refreshRecordingsIfVisible, notifications]);
 
   // ✅ Enhanced project selection with proper cleanup
   const handleSelectProject = async (project) => {
@@ -637,7 +659,7 @@ function AppContent() {
           </div>
         )}
 
-        {/* Time Readings Section */}
+        {/* ✅ ENHANCED: Time Readings Section with Delete Individual Readings */}
         {showTimeReadings && (
           <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -683,21 +705,36 @@ function AppContent() {
                     <th className="border border-gray-300 px-2 md:px-4 py-2 text-left text-sm">Rating</th>
                     <th className="border border-gray-300 px-2 md:px-4 py-2 text-left text-sm">Remarks</th>
                     <th className="border border-gray-300 px-2 md:px-4 py-2 text-left text-sm">Recorded</th>
+                    <th className="border border-gray-300 px-2 md:px-4 py-2 text-center text-sm">Actions</th> {/* ✅ NEW: Actions column */}
                   </tr>
                 </thead>
                 <tbody>
-                  {(timeReadings || []).map((reading) => (
-                    <tr key={reading.id} className="text-sm">
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.processes?.name || 'Unknown'}</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.subprocesses?.name || 'Unknown'}</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{Math.round(reading.time_milliseconds / 1000)}s</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.activity_type || '-'}</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.person_count || 1}</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.rating || 100}%</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.remarks || '-'}</td>
-                      <td className="border border-gray-300 px-2 md:px-4 py-2">{new Date(reading.created_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
+                  {(timeReadings || []).map((reading) => {
+                    const formattedTime = `${Math.round(reading.time_milliseconds / 1000)}s`;
+                    const subprocessName = reading.subprocesses?.name || 'Unknown';
+                    
+                    return (
+                      <tr key={reading.id} className="text-sm hover:bg-gray-50"> {/* ✅ Added hover effect */}
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.processes?.name || 'Unknown'}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{subprocessName}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2 font-mono">{formattedTime}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.activity_type || '-'}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.person_count || 1}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.rating || 100}%</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{reading.remarks || '-'}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2">{new Date(reading.created_at).toLocaleString()}</td>
+                        <td className="border border-gray-300 px-2 md:px-4 py-2 text-center"> {/* ✅ NEW: Delete button */}
+                          <button
+                            onClick={() => deleteTimeReading(reading.id, subprocessName, formattedTime)}
+                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                            title={`Delete reading: ${formattedTime} for ${subprocessName}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               
